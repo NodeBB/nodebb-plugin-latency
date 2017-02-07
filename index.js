@@ -1,9 +1,18 @@
 'use strict';
 
-const { parallel, waterfall, each } = require('async');
+const { parallel, waterfall } = require('async');
 
 const nconf = require.main.require('nconf');
-const { getObject, setObject, sortedSetAdd, sortedSetCount, sortedSetScore, delete: deleteKey, getSortedSetRange, getSortedSetRevRangeByScoreWithScores } = require.main.require('./src/database');
+const {
+  getObject,
+  setObject,
+  sortedSetAdd,
+  getObjectField,
+  setObjectField,
+  sortedSetScore,
+  delete: deleteKey,
+  getSortedSetRevRangeByScoreWithScores,
+} = require.main.require('./src/database');
 
 const settingsKey = 'plugin_latency:settings';
 const listKey = 'plugin_latency:records';
@@ -14,19 +23,21 @@ const encode = str => Buffer.from(str).toString('base64');
 // const decode = str => Buffer.from(str, 'base64').toString();
 
 const record = (route, ms, callback = noop) => {
-  const now = Date.now();
   const id = encode(route);
   waterfall([
-    next => sortedSetAdd(`${listKey}:route:${id}`, now, `${now}:${ms}`, next),
     next => parallel({
-      count: cb => sortedSetCount(`${listKey}:route:${id}`, '-inf', '+inf', cb),
+      count: cb => getObjectField(`${listKey}:routes:counts`, id, cb),
       average: cb => sortedSetScore(`${listKey}:routes`, route, cb),
     }, next),
     ({ count, average }, next) => {
-      const total = (count - 1) * average;
-      const newAverage = (total + ms) / count;
+      const c = count || 0;
+      const total = c * average;
+      const newAverage = (total + ms) / (c + 1);
 
-      sortedSetAdd(`${listKey}:routes`, newAverage, route, next);
+      parallel([
+        nxt => sortedSetAdd(`${listKey}:routes`, newAverage, route, nxt),
+        nxt => setObjectField(`${listKey}:routes:counts`, id, c + 1, nxt),
+      ], next);
     },
   ], callback);
 };
@@ -59,6 +70,8 @@ exports.preLoad = ({ app }, callback) => {
   });
 };
 
+const format = number => (Math.round(number * 100) / 100);
+
 const renderAdmin = (req, res, callback) => {
   parallel({
     settings: next => getObject(settingsKey, next),
@@ -68,15 +81,16 @@ const renderAdmin = (req, res, callback) => {
       callback(err);
       return;
     }
+
     const average = latencies.reduce((prev, { score }) => prev + score, 0) / latencies.length;
 
     res.render('admin/plugins/latency', {
       settings: settings || { enabled: false },
-      latencies: (latencies || []).map(x => ({
-        name: x.value,
-        average: Math.round(x.score * 100) / 100,
+      latencies: (latencies || []).map(({ value, score }) => ({
+        name: value,
+        average: format(score),
       })),
-      average: Math.round(average * 100) / 100 || 'n/a',
+      average: format(average) || 'n/a',
     });
   });
 };
@@ -97,29 +111,10 @@ exports.init = ({ router, middleware }, callback) => {
   });
 
   router.get('/api/admin/plugins/latency/clear', (req, res, next) => {
-    waterfall([
-      cb => getSortedSetRange(`${listKey}:routes`, 0, -1, cb),
-      (routes, cb) => {
-        parallel([
-          nxt => each(routes, (route, n) => {
-            const id = encode(route);
-            deleteKey(`${listKey}:route:${id}`, n);
-          }, nxt),
-          nxt => deleteKey(`${listKey}:routes`, nxt),
-        ], cb);
-      },
+    parallel([
+      cb => deleteKey(`${listKey}:routes:counts`, cb),
+      cb => deleteKey(`${listKey}:routes`, cb),
     ], (err) => {
-      if (err) {
-        next(err);
-        return;
-      }
-
-      res.sendStatus(200);
-    });
-  });
-
-  router.get('/api/admin/plugins/latency/clear/:route', (req, res, next) => {
-    deleteKey(`${listKey}:route:${req.params.id}`, (err) => {
       if (err) {
         next(err);
         return;

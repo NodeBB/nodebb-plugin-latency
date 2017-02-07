@@ -1,0 +1,34 @@
+{
+  "name": "nodebb-plugin-latency",
+  "version": "1.0.0",
+  "description": "Capture and view response time statistics for different routes",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodebb/nodebb-plugin-latency.git"
+  },
+  "keywords": [
+    "nodebb",
+    "plugin",
+    "latency",
+    "response",
+    "time",
+    "route",
+    "path"
+  ],
+  "author": "PitaJ",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nodebb/nodebb-plugin-latency/issues"
+  },
+  "homepage": "https://github.com/nodebb/nodebb-plugin-latency#readme",
+  "dependencies": {
+    "async": "^2.1.4",
+    "eslint": "^3.14.1",
+    "eslint-config-airbnb-base": "^11.0.1",
+    "eslint-plugin-import": "^2.2.0"
+  }
+}

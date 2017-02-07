@@ -1,0 +1,12 @@
+{
+  "library": "index.js",
+  "hooks": [
+    { "hook": "static:app.preload", "method": "preLoad" },
+		{ "hook": "static:app.load", "method": "init" },
+		{ "hook": "filter:admin.header.build", "method": "addAdminNavigation" }
+  ],
+  "templates": "public/templates",
+  "acpScripts": [
+    "public/admin.js"
+  ]
+}

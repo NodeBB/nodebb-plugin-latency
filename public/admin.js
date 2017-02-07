@@ -4,7 +4,6 @@
 define('admin/plugins/latency', [], function () {
   $('#save').click(function () {
     var settings = {
-      url: $('#url').val(),
       enabled: $('#enabled').prop('checked'),
     };
 

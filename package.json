@@ -26,9 +26,11 @@
   },
   "homepage": "https://github.com/nodebb/nodebb-plugin-latency#readme",
   "dependencies": {
-    "async": "^2.1.4",
-    "eslint": "^3.14.1",
-    "eslint-config-airbnb-base": "^11.0.1",
-    "eslint-plugin-import": "^2.2.0"
+    "async": "^2.4.1"
+  },
+  "devDependencies": {
+    "eslint": "^3.19.0",
+    "eslint-config-airbnb-base": "^11.2.0",
+    "eslint-plugin-import": "^2.3.0"
   }
 }

@@ -1,45 +1,47 @@
 'use strict';
 
-const { parallel, waterfall } = require('async');
+const { parallel, waterfall, each } = require('async');
 
 const nconf = require.main.require('nconf');
 const {
   getObject,
   setObject,
-  sortedSetAdd,
-  getObjectField,
-  setObjectField,
-  sortedSetScore,
-  delete: deleteKey,
+  sortedSetIncrBy,
+  sortedSetScores,
   getSortedSetRevRangeByScoreWithScores,
+  delete: deleteKey,
 } = require.main.require('./src/database');
 
 const settingsKey = 'plugin_latency:settings';
 const listKey = 'plugin_latency:records';
+const totalListKey = `${listKey}:routes:totals`;
+const countListKey = `${listKey}:routes:counts`;
 
 const noop = () => {};
 
-const encode = str => Buffer.from(str).toString('base64');
+// const encode = str => Buffer.from(str).toString('base64');
 // const decode = str => Buffer.from(str, 'base64').toString();
 
-const record = (route, ms, callback = noop) => {
-  const id = encode(route);
-  waterfall([
-    next => parallel({
-      count: cb => getObjectField(`${listKey}:routes:counts`, id, cb),
-      average: cb => sortedSetScore(`${listKey}:routes`, route, cb),
-    }, next),
-    ({ count, average }, next) => {
-      const c = count || 0;
-      const total = c * average;
-      const newAverage = (total + ms) / (c + 1);
+const bufferTime = 5000;
+let tempStore = [];
 
-      parallel([
-        nxt => sortedSetAdd(`${listKey}:routes`, newAverage, route, nxt),
-        nxt => setObjectField(`${listKey}:routes:counts`, id, c + 1, nxt),
-      ], next);
-    },
-  ], callback);
+const commit = (callback = noop) => {
+  const store = tempStore;
+  tempStore = [];
+  each(store, ([route, ms], cb) => {
+    parallel([
+      next => sortedSetIncrBy(totalListKey, ms, route, next),
+      next => sortedSetIncrBy(countListKey, 1, route, next),
+    ], cb);
+  }, callback);
+};
+
+const record = (route, ms) => {
+  if (!tempStore.length) {
+    setTimeout(commit, bufferTime);
+  }
+
+  tempStore.push([route, ms]);
 };
 
 exports.preLoad = ({ app }, callback) => {
@@ -73,26 +75,33 @@ exports.preLoad = ({ app }, callback) => {
 const format = number => (Math.round(number * 100) / 100);
 
 const renderAdmin = (req, res, callback) => {
-  parallel({
-    settings: next => getObject(settingsKey, next),
-    latencies: next => getSortedSetRevRangeByScoreWithScores(`${listKey}:routes`, 0, 100, '+inf', 0, next),
-  }, (err, { settings, latencies }) => {
-    if (err) {
-      callback(err);
-      return;
-    }
+  waterfall([
+    next => parallel({
+      settings: cb => getObject(settingsKey, cb),
+      totals: cb => getSortedSetRevRangeByScoreWithScores(totalListKey, 0, 100, '+inf', 0, cb),
+    }, next),
+    ({ settings, totals }, next) => sortedSetScores(
+      countListKey,
+      totals.map(r => r.value),
+      (err, counts) => next(err, { counts, totals, settings })
+    ),
+    ({ settings, totals, counts }) => {
+      const latencies = totals.map(({ value: name, score: total }, i) => ({
+        name,
+        average: total / counts[i],
+      }));
+      const mean = latencies.reduce((prev, { average }) => prev + average, 0) / latencies.length;
 
-    const average = latencies.reduce((prev, { score }) => prev + score, 0) / latencies.length;
-
-    res.render('admin/plugins/latency', {
-      settings: settings || { enabled: false },
-      latencies: (latencies || []).map(({ value, score }) => ({
-        name: value,
-        average: format(score),
-      })),
-      average: format(average) || 'n/a',
-    });
-  });
+      res.render('admin/plugins/latency', {
+        settings: settings || { enabled: false },
+        latencies: latencies.map(({ name, average }) => ({
+          name,
+          average: format(average),
+        })),
+        average: format(mean) || 'n/a',
+      });
+    },
+  ], callback);
 };
 
 exports.init = ({ router, middleware }, callback) => {
@@ -112,8 +121,8 @@ exports.init = ({ router, middleware }, callback) => {
 
   router.get('/api/admin/plugins/latency/clear', (req, res, next) => {
     parallel([
-      cb => deleteKey(`${listKey}:routes:counts`, cb),
-      cb => deleteKey(`${listKey}:routes`, cb),
+      cb => deleteKey(countListKey, cb),
+      cb => deleteKey(totalListKey, cb),
     ], (err) => {
       if (err) {
         next(err);

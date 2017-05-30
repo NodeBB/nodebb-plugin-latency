@@ -23,25 +23,33 @@ const noop = () => {};
 // const decode = str => Buffer.from(str, 'base64').toString();
 
 const bufferTime = 5000;
-let tempStore = [];
+let tempStore = {};
+let empty = true;
 
 const commit = (callback = noop) => {
   const store = tempStore;
-  tempStore = [];
-  each(store, ([route, ms], cb) => {
+  tempStore = {};
+  empty = true;
+
+  each(Object.keys(store), (key, cb) => {
+    const { route, count, total } = store[key];
+
     parallel([
-      next => sortedSetIncrBy(totalListKey, ms, route, next),
-      next => sortedSetIncrBy(countListKey, 1, route, next),
+      next => sortedSetIncrBy(totalListKey, total, route, next),
+      next => sortedSetIncrBy(countListKey, count, route, next),
     ], cb);
   }, callback);
 };
 
 const record = (route, ms) => {
-  if (!tempStore.length) {
+  if (empty) {
     setTimeout(commit, bufferTime);
+    empty = false;
   }
 
-  tempStore.push([route, ms]);
+  tempStore[route] = tempStore[route] || { route, count: 0, total: 0 };
+  tempStore[route].count += 1;
+  tempStore[route].total += ms;
 };
 
 exports.preLoad = ({ app }, callback) => {

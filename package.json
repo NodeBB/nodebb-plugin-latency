@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-latency",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Capture and view response time statistics for different routes",
   "main": "index.js",
   "scripts": {

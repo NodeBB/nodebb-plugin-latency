@@ -68,7 +68,7 @@ exports.preLoad = ({ app }, callback) => {
 
         res.send = function send(...args) {
           const response = this;
-          record(response.locals.template || req.path, Date.now() - start);
+          record(response.locals.template || 'unmatched', Date.now() - start);
           oldSend.apply(response, args);
         };
 
